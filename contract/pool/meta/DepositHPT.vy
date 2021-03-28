@@ -66,12 +66,12 @@ token: public(address)
 base_pool: public(address)
 
 coins: public(address[N_COINS])
-lend_coin: public(address)
+underlying_coin: public(address)
 base_coins: public(address[BASE_N_COINS])
 
 
 @external
-def __init__(_pool: address, _token: address, _lend_coin: address):
+def __init__(_pool: address, _token: address, _underlying_coin: address):
     """
     @notice Contract constructor
     @param _pool Metapool address
@@ -81,11 +81,12 @@ def __init__(_pool: address, _token: address, _lend_coin: address):
     self.token = _token
     _base_pool: address = CurveMeta(_pool).base_pool()
     self.base_pool = _base_pool
-    self.lend_coin = _lend_coin
+    self.underlying_coin = _underlying_coin
 
     for i in range(N_COINS):
         coin: address = CurveMeta(_pool).coins(convert(i, uint256))
         self.coins[i] = coin
+        
         # approve coins for infinite transfers
         _response: Bytes[32] = raw_call(
             coin,
@@ -135,42 +136,44 @@ def add_liquidity(amounts: uint256[N_ALL_COINS], min_mint_amount: uint256) -> ui
             continue
         coin: address = ZERO_ADDRESS
         if i < MAX_COIN:
-            coin = self.coins[i]
+            coin = self.underlying_coin
             meta_amounts[i] = amount
         else:
             x: int128 = i - MAX_COIN
             coin = self.base_coins[x]
             base_amounts[x] = amount
             deposit_base = True
+
+        # "safeTransferFrom" which works for ERC20s which return bool or not
+        _response: Bytes[32] = raw_call(
+            coin,
+            concat(
+                method_id("transferFrom(address,address,uint256)"),
+                convert(msg.sender, bytes32),
+                convert(self, bytes32),
+                convert(amount, bytes32),
+            ),
+            max_outsize=32,
+        )  # dev: failed transfer
+        if len(_response) > 0:
+            assert convert(_response, bool)  # dev: failed transfer
+        # end "safeTransferFrom"
         
         if i < MAX_COIN:
-            ERC20(self.coins[i]).approve(self.lend_coin, amount)
-            ok: uint256 = cERC20(self.lend_coin).mint(amount)
+            ERC20(self.underlying_coin).approve(self.coins[i], amount)
+            ok: uint256 = cERC20(self.coins[i]).mint(amount)
             if ok > 0:
                 raise "Could not mint coin"
-        else:
-            # "safeTransferFrom" which works for ERC20s which return bool or not
-            _response: Bytes[32] = raw_call(
-                coin,
-                concat(
-                    method_id("transferFrom(address,address,uint256)"),
-                    convert(msg.sender, bytes32),
-                    convert(self, bytes32),
-                    convert(amount, bytes32),
-                ),
-                max_outsize=32,
-            )  # dev: failed transfer
-            if len(_response) > 0:
-                assert convert(_response, bool)  # dev: failed transfer
-            # end "safeTransferFrom"
+            meta_amounts[i] = cERC20(self.coins[i]).balanceOf(self)
+            ERC20(self.coins[i]).approve(self.pool, meta_amounts[i])
 
         # Handle potential Tether fees
-        if coin == FEE_ASSET:
-            amount = ERC20(FEE_ASSET).balanceOf(self)
-            if i < MAX_COIN:
-                meta_amounts[i] = amount
-            else:
-                base_amounts[i - MAX_COIN] = amount
+        #if coin == FEE_ASSET:
+            #amount = ERC20(FEE_ASSET).balanceOf(self)
+            #if i < MAX_COIN:
+            #    meta_amounts[i] = amount
+            #else:
+            #    base_amounts[i - MAX_COIN] = amount
 
     # Deposit to the base pool
     if deposit_base:
@@ -223,10 +226,10 @@ def remove_liquidity(_amount: uint256, min_amounts: uint256[N_ALL_COINS]) -> uin
         else:
             coin = self.base_coins[i - MAX_COIN]
         if i < MAX_COIN:
-            _balance: uint256 = cERC20(self.lend_coin).balanceOf(self)
+            _balance: uint256 = cERC20(self.coins[i]).balanceOf(self)
             if _balance == 0:  # Do nothing if there are 0 coins
                 continue
-            ok: uint256 = cERC20(self.lend_coin).redeem(_balance)
+            ok: uint256 = cERC20(self.coins[i]).redeem(_balance)
             if ok > 0:
                 raise "Could not redeem coin"
 
@@ -273,9 +276,9 @@ def remove_liquidity_one_coin(_token_amount: uint256, i: int128, _min_amount: ui
         )
 
     if i < MAX_COIN:
-        _balance: uint256 = cERC20(self.lend_coin).balanceOf(self)
+        _balance: uint256 = cERC20(self.coins[i]).balanceOf(self)
         if _balance > 0:  # Do nothing if there are 0 coins
-            ok: uint256 = cERC20(self.lend_coin).redeem(_balance)
+            ok: uint256 = cERC20(self.coins[i]).redeem(_balance)
             if ok > 0:
                 raise "Could not redeem coin"
 
@@ -358,12 +361,13 @@ def remove_liquidity_imbalance(amounts: uint256[N_ALL_COINS], max_burn_amount: u
             amount = amounts_base[i - MAX_COIN]
 
         if i < MAX_COIN:
-            _balance: uint256 = cERC20(self.lend_coin).balanceOf(self)
+            _balance: uint256 = cERC20(self.coins[i]).balanceOf(self)
             if _balance == 0:  # Do nothing if there are 0 coins
                 continue
-            ok: uint256 = cERC20(self.lend_coin).redeem(_balance)
+            ok: uint256 = cERC20(self.coins[i]).redeem(_balance)
             if ok > 0:
                 raise "Could not redeem coin"
+            amount = ERC20(coin).balanceOf(self)
         
         # "safeTransfer" which works for ERC20s which return bool or not
         if amount > 0:
