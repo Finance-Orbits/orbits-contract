@@ -1,9 +1,9 @@
 # @version ^0.2.5
 """
-@title Curve HUSD Metapool
+@title Curve USDT HPT Metapool
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2020 - all rights reserved
-@dev Utilizes 3Pool to allow swaps between HUSD / DAI / USDC / USDT
+@dev Utilizes 3Pool to allow swaps between USDT / DAI / USDC / USDT
 """
 
 from vyper.interfaces import ERC20
@@ -25,7 +25,7 @@ interface Curve:
     def exchange(i: int128, j: int128, dx: uint256, min_dy: uint256): nonpayable
     def add_liquidity(amounts: uint256[BASE_N_COINS], min_mint_amount: uint256): nonpayable
     def remove_liquidity_one_coin(_token_amount: uint256, i: int128, min_amount: uint256): nonpayable
-
+    
 # External Contracts
 interface cERC20:
     def totalSupply() -> uint256: view
@@ -47,10 +47,7 @@ interface cERC20:
     def supplyRatePerBlock() -> uint256: view
     def accrualBlockNumber() -> uint256: view
 
-interface Invite:
-    def addSwapAmount(_pid: uint256, user: address, amount: uint256): nonpayable
-    def addLiquidityShare(_pid: uint256, user: address, amount: uint256): nonpayable
-    def removeLiquidityShare(_pid: uint256, user: address, amount: uint256): nonpayable
+
 
 # Events
 event TokenExchange:
@@ -124,7 +121,6 @@ N_COINS: constant(int128) = 2
 MAX_COIN: constant(int128) = N_COINS - 1
 
 FEE_DENOMINATOR: constant(uint256) = 10 ** 10
-LENDING_PRECISION: constant(uint256) = 10 ** 18
 PRECISION: constant(uint256) = 10 ** 18  # The precision to convert to
 PRECISION_MUL: constant(uint256[N_COINS]) = [1, 1]
 RATES: constant(uint256[N_COINS]) = [1000000000000000000, 1000000000000000000]
@@ -146,7 +142,6 @@ ADMIN_ACTIONS_DELAY: constant(uint256) = 3 * 86400
 MIN_RAMP_TIME: constant(uint256) = 86400
 
 coins: public(address[N_COINS])
-lend_coin: public(address)
 balances: public(uint256[N_COINS])
 fee: public(uint256)  # fee * 1e10
 admin_fee: public(uint256)  # admin_fee * 1e10
@@ -168,8 +163,6 @@ future_A: public(uint256)
 initial_A_time: public(uint256)
 future_A_time: public(uint256)
 
-invite: Invite
-
 admin_actions_deadline: public(uint256)
 transfer_ownership_deadline: public(uint256)
 future_fee: public(uint256)
@@ -189,9 +182,7 @@ def __init__(
     _base_pool: address,
     _A: uint256,
     _fee: uint256,
-    _admin_fee: uint256,
-    _lend_coin: address,
-    _invite: address
+    _admin_fee: uint256
 ):
     """
     @notice Contract constructor
@@ -206,8 +197,6 @@ def __init__(
     for i in range(N_COINS):
         assert _coins[i] != ZERO_ADDRESS
     self.coins = _coins
-    self.lend_coin = _lend_coin
-    self.invite = Invite(_invite)
     self.initial_A = _A * A_PRECISION
     self.future_A = _A * A_PRECISION
     self.fee = _fee
@@ -269,28 +258,7 @@ def A() -> uint256:
 @external
 def A_precise() -> uint256:
     return self._A()
-
-@view
-@internal
-def _stored_rates() -> uint256:
-    # exchangeRateStored * (1 + supplyRatePerBlock * (getBlockNumber - accrualBlockNumber) / 1e18)
-    result: uint256 = PRECISION_MUL[0]
-    rate: uint256 = LENDING_PRECISION  # Used with no lending
-    rate = cERC20(self.lend_coin).exchangeRateStored()
-    supply_rate: uint256 = cERC20(self.lend_coin).supplyRatePerBlock()
-    old_block: uint256 = cERC20(self.lend_coin).accrualBlockNumber()
-    rate += rate * supply_rate * (block.number - old_block) / LENDING_PRECISION
-    result *= rate
-    return result
-
-@internal
-def _current_rates() -> uint256:
-    result: uint256 = PRECISION_MUL[0]
-    rate: uint256 = LENDING_PRECISION  # Used with no lending
-    rate = cERC20(self.lend_coin).exchangeRateCurrent()
-    result *= rate
-    return result
-
+    
 @view
 @internal
 def _xp(vp_rate: uint256[N_COINS]) -> uint256[N_COINS]:
@@ -312,6 +280,27 @@ def _xp_mem(vp_rate: uint256[N_COINS], _balances: uint256[N_COINS]) -> uint256[N
         result[i] = result[i] * _balances[i] / PRECISION
     return result
 
+
+@view
+@internal
+def _stored_rates() -> uint256:
+    # exchangeRateStored * (1 + supplyRatePerBlock * (getBlockNumber - accrualBlockNumber) / 1e18)
+    result: uint256 = PRECISION_MUL[0]
+    rate: uint256 = PRECISION  # Used with no lending
+    rate = cERC20(self.coins[0]).exchangeRateStored()
+    supply_rate: uint256 = cERC20(self.coins[0]).supplyRatePerBlock()
+    old_block: uint256 = cERC20(self.coins[0]).accrualBlockNumber()
+    rate += rate * supply_rate * (block.number - old_block) / PRECISION
+    result *= rate
+    return result
+
+@internal
+def _current_rates() -> uint256:
+    result: uint256 = PRECISION_MUL[0]
+    rate: uint256 = PRECISION  # Used with no lending
+    rate = cERC20(self.coins[0]).exchangeRateCurrent()
+    result *= rate
+    return result
 
 @internal
 def _vp_rate() -> uint256:
@@ -360,13 +349,11 @@ def get_D(xp: uint256[N_COINS], amp: uint256) -> uint256:
                 break
     return D
 
-
 @view
 @internal
 def get_D_mem(vp_rate: uint256[N_COINS], _balances: uint256[N_COINS], amp: uint256) -> uint256:
     xp: uint256[N_COINS] = self._xp_mem(vp_rate, _balances)
     return self.get_D(xp, amp)
-
 
 @view
 @external
@@ -488,10 +475,7 @@ def add_liquidity(amounts: uint256[N_COINS], min_mint_amount: uint256) -> uint25
     # Take coins from the sender
     for i in range(N_COINS):
         if amounts[i] > 0:
-            if i == 0:
-                assert cERC20(self.lend_coin).transferFrom(msg.sender, self, amounts[i])  # dev: failed transfer
-            else:
-                assert ERC20(self.coins[i]).transferFrom(msg.sender, self, amounts[i])  # dev: failed transfer
+            assert ERC20(self.coins[i]).transferFrom(msg.sender, self, amounts[i])  # dev: failed transfer
 
     # Mint pool tokens
     self.token.mint(msg.sender, mint_amount)
@@ -553,7 +537,7 @@ def get_y(i: int128, j: int128, x: uint256, xp_: uint256[N_COINS]) -> uint256:
 def get_dy(i: int128, j: int128, dx: uint256) -> uint256:
     # dx and dy in c-units
     rates: uint256[N_COINS] = RATES
-    rates[0] =  self._stored_rates()
+    rates[0] = self._stored_rates()
     rates[MAX_COIN] = self._vp_rate_ro()
     xp: uint256[N_COINS] = self._xp(rates)
 
@@ -569,7 +553,7 @@ def get_dy(i: int128, j: int128, dx: uint256) -> uint256:
 def get_dy_underlying(i: int128, j: int128, dx: uint256) -> uint256:
     # dx and dy in underlying units
     vp_rate: uint256[N_COINS] = RATES
-    vp_rate[0] =  self._stored_rates()
+    vp_rate[0] = self._stored_rates()
     vp_rate[MAX_COIN] = self._vp_rate_ro()
     xp: uint256[N_COINS] = self._xp(vp_rate)
     precisions: uint256[N_COINS] = PRECISION_MUL
@@ -658,14 +642,8 @@ def exchange(i: int128, j: int128, dx: uint256, min_dy: uint256) -> uint256:
     # When rounding errors happen, we undercharge admin fee in favor of LP
     self.balances[j] = old_balances[j] - dy - dy_admin_fee
 
-    if i == 0:
-        assert cERC20(self.lend_coin).transferFrom(msg.sender, self, dx)
-    else:
-        assert ERC20(self.coins[i]).transferFrom(msg.sender, self, dx)
-    if j == 0:
-        assert cERC20(self.lend_coin).transfer(msg.sender, dy)
-    else:
-        assert ERC20(self.coins[j]).transfer(msg.sender, dy)
+    assert ERC20(self.coins[i]).transferFrom(msg.sender, self, dx)
+    assert ERC20(self.coins[j]).transfer(msg.sender, dy)
 
     log TokenExchange(msg.sender, i, dx, j, dy)
 
@@ -731,7 +709,6 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
     if len(_response) > 0:
         assert convert(_response, bool)  # dev: failed transfer
     # end "safeTransferFrom"
-    
     # Handle potential Tether fees
     if input_coin == FEE_ASSET:
         dx_w_fee = ERC20(FEE_ASSET).balanceOf(self) - dx_w_fee
@@ -782,17 +759,6 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
             out_amount: uint256 = ERC20(output_coin).balanceOf(self)
             Curve(_base_pool).remove_liquidity_one_coin(dy, base_j, 0)
             dy = ERC20(output_coin).balanceOf(self) - out_amount
-        
-        ok: uint256 = 0
-        if base_i < 0:
-            ERC20(self.coins[0]).approve(self.lend_coin, dx)
-            ok = cERC20(self.lend_coin).mint(dx)
-            if ok > 0:
-                raise "Could not mint coin"
-        if base_j < 0:
-            ok = cERC20(self.lend_coin).redeem(dy)
-            if ok > 0:
-                raise "Could not redeem coin"
 
         assert dy >= min_dy, "Too few coins in result"
 
@@ -816,7 +782,6 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
         assert convert(_response, bool)  # dev: failed transfer
     # end "safeTransfer"
 
-    self.invite.addSwapAmount(3, msg.sender, dx)
     log TokenExchangeUnderlying(msg.sender, i, dx, j, dy)
 
     return dy
@@ -841,10 +806,7 @@ def remove_liquidity(_amount: uint256, min_amounts: uint256[N_COINS]) -> uint256
         assert value >= min_amounts[i], "Too few coins in result"
         self.balances[i] -= value
         amounts[i] = value
-        if i == 0:
-            assert cERC20(self.lend_coin).transfer(msg.sender, value)
-        else:
-            assert ERC20(self.coins[i]).transfer(msg.sender, value)
+        assert ERC20(self.coins[i]).transfer(msg.sender, value)
 
     self.token.burnFrom(msg.sender, _amount)  # dev: insufficient funds
 
@@ -865,7 +827,6 @@ def remove_liquidity_imbalance(amounts: uint256[N_COINS], max_burn_amount: uint2
     assert not self.is_killed  # dev: is killed
 
     amp: uint256 = self._A()
-
     vp_rate: uint256[N_COINS] = RATES
     vp_rate[0] = self._current_rates()
     vp_rate[MAX_COIN] = self._vp_rate()
@@ -903,10 +864,7 @@ def remove_liquidity_imbalance(amounts: uint256[N_COINS], max_burn_amount: uint2
     self.token.burnFrom(msg.sender, token_amount)  # dev: insufficient funds
     for i in range(N_COINS):
         if amounts[i] != 0:
-            if i == 0:
-                assert cERC20(self.lend_coin).transfer(msg.sender, amounts[i])
-            else:
-                assert ERC20(self.coins[i]).transfer(msg.sender, amounts[i])
+            assert ERC20(self.coins[i]).transfer(msg.sender, amounts[i])
 
     log RemoveLiquidityImbalance(msg.sender, amounts, fees, D1, token_supply - token_amount)
 
@@ -1032,10 +990,7 @@ def remove_liquidity_one_coin(_token_amount: uint256, i: int128, _min_amount: ui
 
     self.balances[i] -= (dy + dy_fee * self.admin_fee / FEE_DENOMINATOR)
     self.token.burnFrom(msg.sender, _token_amount)  # dev: insufficient funds
-    if i == 0:
-        assert cERC20(self.lend_coin).transfer(msg.sender, dy)
-    else:
-        assert ERC20(self.coins[i]).transfer(msg.sender, dy)
+    assert ERC20(self.coins[i]).transfer(msg.sender, dy)
 
     log RemoveLiquidityOne(msg.sender, _token_amount, dy, total_supply - _token_amount)
 
