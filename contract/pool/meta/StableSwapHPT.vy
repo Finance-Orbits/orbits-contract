@@ -142,6 +142,7 @@ ADMIN_ACTIONS_DELAY: constant(uint256) = 3 * 86400
 MIN_RAMP_TIME: constant(uint256) = 86400
 
 coins: public(address[N_COINS])
+underlying_coin: public(address)
 balances: public(uint256[N_COINS])
 fee: public(uint256)  # fee * 1e10
 admin_fee: public(uint256)  # admin_fee * 1e10
@@ -182,7 +183,8 @@ def __init__(
     _base_pool: address,
     _A: uint256,
     _fee: uint256,
-    _admin_fee: uint256
+    _admin_fee: uint256,
+     _underlying_coin: address
 ):
     """
     @notice Contract constructor
@@ -197,6 +199,7 @@ def __init__(
     for i in range(N_COINS):
         assert _coins[i] != ZERO_ADDRESS
     self.coins = _coins
+    self.underlying_coin = _underlying_coin
     self.initial_A = _A * A_PRECISION
     self.future_A = _A * A_PRECISION
     self.fee = _fee
@@ -682,19 +685,19 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
     # Addresses for input and output coins
     input_coin: address = ZERO_ADDRESS
     if base_i < 0:
-        input_coin = self.coins[i]
+        input_coin = self.underlying_coin
     else:
         input_coin = self.base_coins[base_i]
     output_coin: address = ZERO_ADDRESS
     if base_j < 0:
-        output_coin = self.coins[j]
+        output_coin = self.underlying_coin
     else:
         output_coin = self.base_coins[base_j]
 
     # Handle potential Tether fees
     dx_w_fee: uint256 = dx
-    if input_coin == FEE_ASSET:
-        dx_w_fee = ERC20(FEE_ASSET).balanceOf(self)
+    # if input_coin == FEE_ASSET:
+    #    dx_w_fee = ERC20(FEE_ASSET).balanceOf(self)
     # "safeTransferFrom" which works for ERC20s which return bool or not
     _response: Bytes[32] = raw_call(
         input_coin,
@@ -710,8 +713,8 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
         assert convert(_response, bool)  # dev: failed transfer
     # end "safeTransferFrom"
     # Handle potential Tether fees
-    if input_coin == FEE_ASSET:
-        dx_w_fee = ERC20(FEE_ASSET).balanceOf(self) - dx_w_fee
+    # if input_coin == FEE_ASSET:
+    #    dx_w_fee = ERC20(FEE_ASSET).balanceOf(self) - dx_w_fee
 
     if base_i < 0 or base_j < 0:
         old_balances: uint256[N_COINS] = self.balances
@@ -719,6 +722,12 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
 
         x: uint256 = 0
         if base_i < 0:
+            x = cERC20(self.coins[i]).balanceOf(self)
+            ERC20(self.underlying_coin).approve(self.coins[i], dx_w_fee)
+            ok: uint256 = cERC20(self.coins[i]).mint(dx_w_fee)
+            if ok > 0:
+                raise "Could not mint coin"
+            dx_w_fee = cERC20(self.coins[i]).balanceOf(self) - x
             x = xp[i] + dx_w_fee * rates[i] / PRECISION
         else:
             # i is from BasePool
@@ -758,6 +767,12 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
         if base_j >= 0:
             out_amount: uint256 = ERC20(output_coin).balanceOf(self)
             Curve(_base_pool).remove_liquidity_one_coin(dy, base_j, 0)
+            dy = ERC20(output_coin).balanceOf(self) - out_amount
+        else:
+            out_amount: uint256 = ERC20(output_coin).balanceOf(self)
+            ok: uint256 = cERC20(self.coins[j]).redeem(dy)
+            if ok > 0:
+                raise "Could not redeem coin"
             dy = ERC20(output_coin).balanceOf(self) - out_amount
 
         assert dy >= min_dy, "Too few coins in result"
