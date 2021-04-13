@@ -282,6 +282,7 @@ def remove_liquidity_one_coin(_token_amount: uint256, i: int128, _min_amount: ui
             ok: uint256 = cERC20(self.coins[i]).redeem(_balance)
             if ok > 0:
                 raise "Could not redeem coin"
+        coin = self.underlying_coin
 
     # Tranfer the coin out
     coin_amount: uint256 = ERC20(coin).balanceOf(self)
@@ -368,6 +369,7 @@ def remove_liquidity_imbalance(amounts: uint256[N_ALL_COINS], max_burn_amount: u
             ok: uint256 = cERC20(self.coins[i]).redeem(_balance)
             if ok > 0:
                 raise "Could not redeem coin"
+            coin = self.underlying_coin
             amount = ERC20(coin).balanceOf(self)
         
         # "safeTransfer" which works for ERC20s which return bool or not
