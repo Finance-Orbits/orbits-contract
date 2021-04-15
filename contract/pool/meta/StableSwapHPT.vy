@@ -1148,7 +1148,7 @@ def donate_admin_fees():
 @external
 def withdraw_dao_coin(_value: uint256):
     assert msg.sender == self.owner
-    self.dao_coin.transfer(msg.sender, _value)
+    ERC20(self.dao_coin).transfer(msg.sender, _value)
 
 @external
 def kill_me():
