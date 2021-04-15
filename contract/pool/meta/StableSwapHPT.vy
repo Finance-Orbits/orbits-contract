@@ -143,6 +143,7 @@ MIN_RAMP_TIME: constant(uint256) = 86400
 
 coins: public(address[N_COINS])
 underlying_coin: public(address)
+dao_coin: public(address)
 balances: public(uint256[N_COINS])
 fee: public(uint256)  # fee * 1e10
 admin_fee: public(uint256)  # admin_fee * 1e10
@@ -184,7 +185,8 @@ def __init__(
     _A: uint256,
     _fee: uint256,
     _admin_fee: uint256,
-     _underlying_coin: address
+    _underlying_coin: address,
+    _dao_coin: address
 ):
     """
     @notice Contract constructor
@@ -200,6 +202,7 @@ def __init__(
         assert _coins[i] != ZERO_ADDRESS
     self.coins = _coins
     self.underlying_coin = _underlying_coin
+    self.dao_coin = _dao_coin
     self.initial_A = _A * A_PRECISION
     self.future_A = _A * A_PRECISION
     self.fee = _fee
@@ -1142,6 +1145,10 @@ def donate_admin_fees():
     for i in range(N_COINS):
         self.balances[i] = ERC20(self.coins[i]).balanceOf(self)
 
+@external
+def withdraw_dao_coin(_value: uint256):
+    assert msg.sender == self.owner
+    self.dao_coin.transfer(msg.sender, _value)
 
 @external
 def kill_me():
