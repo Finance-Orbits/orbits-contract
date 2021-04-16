@@ -131,7 +131,7 @@ BASE_PRECISION_MUL: constant(uint256[BASE_N_COINS]) = [10000000000, 1, 100000000
 BASE_RATES: constant(uint256[BASE_N_COINS]) = [10000000000000000000000000000, 1000000000000000000, 1000000000000000000000000000000]
 
 # An asset which may have a transfer fee (USDT)
-FEE_ASSET: constant(address) = 0xa71EdC38d189767582C38A3145b5873052c3e47a
+#FEE_ASSET: constant(address) = 0xa71EdC38d189767582C38A3145b5873052c3e47a
 
 MAX_ADMIN_FEE: constant(uint256) = 10 * 10 ** 9
 MAX_FEE: constant(uint256) = 5 * 10 ** 9
@@ -799,7 +799,7 @@ def exchange_underlying(i: int128, j: int128, dx: uint256, min_dy: uint256) -> u
     if len(_response) > 0:
         assert convert(_response, bool)  # dev: failed transfer
     # end "safeTransfer"
-
+    
     log TokenExchangeUnderlying(msg.sender, i, dx, j, dy)
 
     return dy
@@ -1137,14 +1137,7 @@ def withdraw_admin_fees():
         value: uint256 = ERC20(c).balanceOf(self) - self.balances[i]
         if value > 0:
             assert ERC20(c).transfer(msg.sender, value)
-
-
-@external
-def donate_admin_fees():
-    assert msg.sender == self.owner  # dev: only owner
-    for i in range(N_COINS):
-        self.balances[i] = ERC20(self.coins[i]).balanceOf(self)
-
+        
 @external
 def withdraw_dao_coin(_value: uint256):
     assert msg.sender == self.owner
