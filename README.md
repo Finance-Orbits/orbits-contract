@@ -11,8 +11,8 @@ Orbits is an exchange liquidity pool on HecoChain. Orbits is designed for extrem
 | Filda LP  | token/CurveTokenV2.vy |0xC3d1633b501FA62A1BD51cfB0A40976e92F6d3a4 |
 | Filda Swap  | pool/meta/StableSwapHPT.vy |0x7Cb97cE079FAf260a3DBde36CBC7BA5B1F5D6eFf |
 | Filda Deposit  | pool/meta/DepositHPT.vy |0x9259d47a2f7110A1f340A720e089BCF5D69B5637 |
-| Channels LP  | token/CurveTokenV2.vy |0xCb76CF2CBe257643638e36b0A736832fE7AfCE88 |
-| Channels Swap  | pool/meta/StableSwapHPT.vy |0xa05D0C2742915fccdE4486eE9E8F9BF8aB8C8C2c |
-| Channels Deposit  | pool/meta/DepositHPT.vy |0x193039B8CdC728Eb320e635eAfa459B0F71167Ec |
+| Channels LP  | token/CurveTokenV2.vy |0x6294868D2D137827cF302C4a6a3B6dae3B137E78 |
+| Channels Swap  | pool/meta/StableSwapCAN.vy |0xD0F83eA59F27A56D18973a622906b0A7775081DA |
+| Channels Deposit  | pool/meta/DepositCAN.vy |0x0F7546c3F496930ba82a1A61775519b53F079074 |
 
 
